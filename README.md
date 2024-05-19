@@ -31,6 +31,12 @@ visualizations.
 python search.py display --solution_file ./sols/sol_0_1715774254.128875.json --cmap Blues --figsize 30 30 --alpha 0.7 --n_samples=200000
 ```
 
+You can also generate an animation with the `video` parameter:
+
+```
+python attractors.py video --solution_file ./sols/sol_10_1715885863.353617.json --cmap cividis --figsize 20 20
+```
+
 (See help for the extra supported styling options)
 
 

@@ -1,12 +1,13 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import json
 import logging
 import argparse
 import sys
 
-from tqdm import trange
+from tqdm import trange, tqdm
 
 
 logger = logging.getLogger('chaos')
@@ -42,6 +43,84 @@ def plot_system(xs, ys, color, figsize=(8,8), minimal=False, title=None,
 
 
     return fig
+
+
+def render_video(sol, figsize=(8,8), output='./animation.mp4',
+                cmap='Blues', bg_color='#0b0b0b', alpha=.3, size=.8):
+
+    # Perturb N times the initial solution and run the simulation N times
+    DELTA = 0.05
+    n_iters = 100
+
+    sol['as'] = np.array(sol['as'])
+    sol['bs'] = np.array(sol['bs'])
+
+    mods_as = np.linspace(
+        np.array(sol['as']),
+        np.array(sol['as']) + np.random.uniform(-DELTA, DELTA, sol['as'].shape),
+        n_iters
+    )
+
+    mods_bs = np.linspace(
+        np.array(sol['bs']),
+        np.array(sol['bs']) + np.random.uniform(-DELTA, DELTA, sol['bs'].shape),
+        n_iters
+    )
+
+    alter = np.linspace(-1, 1, n_iters)
+
+    states = []
+
+    logger.info(f"Simulating {n_iters} random variations of the initial configuration.")
+
+    for i, delta in enumerate(tqdm(alter)):
+
+        si = dict(sol)
+
+        si['as'] = mods_as[i]
+        si['bs'] = mods_bs[i]
+
+        states.append(
+            run_system(si, n_iter=100_000)
+        )
+
+
+    # Remove states that "exploded" so the animation is cleaner
+    states = [s for s in states if len(s[0]) > 9_000]
+
+    if len(states) < 100_000 / 2:
+        logger.warn("A considerable number of states exploded. The animation will be shorter...")
+
+    # Function to update the plot for each frame
+    def update(frame):
+        xs = states[frame][0]
+        ys = states[frame][1]
+        ds = states[frame][2]
+
+        newdata = np.column_stack((xs, ys))
+
+        sc.set_offsets(newdata)
+
+        colors = cmap(ds)
+        sc.set_color(colors)
+
+        pbar.update(1)
+        return sc,
+
+    cmap = plt.get_cmap('bone')
+
+    fig, ax = plt.subplots(figsize=figsize, facecolor="black")
+    fig.set_facecolor(bg_color)
+    ax.set_facecolor(bg_color)
+    ax.set_axis_off()
+
+    sc = ax.scatter(np.array(states)[:, 0], np.array(states)[:, 1], alpha=1, cmap=cmap, marker='.', s=.1)
+
+    with tqdm(total=len(states)) as pbar:
+        ani = animation.FuncAnimation(fig, update, frames=len(states), interval=90, blit=True)
+
+    logger.info("Saving animation...")
+    ani.save(output)
 
 
 def run_system(solution, n_iter=10_000):
@@ -217,7 +296,7 @@ def search(n_runs=1000, savepath='./sols/'):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Search beauty within chaos.')
-    parser.add_argument('mode', default='search', choices=['search', 'display'],
+    parser.add_argument('mode', default='search', choices=['search', 'display', 'video'],
                         help='Mode of the script. Use `search` first for generating initial solutions and then `display` for generating visualizations.')
     parser.add_argument('--solution_file', default=None,
                         help='Path to json with the initial config of the system. Only used for `display`.')
@@ -261,5 +340,26 @@ if __name__ == '__main__':
             suffix = time.time()
             outpath = f"out_{suffix}.png"
         else:
-            outpad = args.viz_out_path
+            outpath = args.viz_out_path
         fig.savefig(outpath)
+
+    elif args.mode == 'video':
+        sol_path = args.solution_file
+
+        if args.viz_out_path is None:
+            suffix = time.time()
+            outpath = f"out_{suffix}.mp4"
+        else:
+            outpath = args.viz_out_path
+
+        if sol_path is None:
+            raise ValueError("A path to the solution.json is needed!")
+
+        with open(sol_path, 'r') as f:
+            sol = json.load(f)
+
+        render_video(sol,
+                     output=outpath,
+                     cmap=args.cmap,
+                     figsize=args.figsize,
+                     )
